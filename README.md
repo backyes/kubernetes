@@ -419,13 +419,20 @@ node IP, pod IP, external IP, work.
 https://coreos.com/kubernetes/docs/latest/kubernetes-networking.html
 explained this:
 
-To understand load balancer The Kubernetes network model outlines
-three methods of component communication:
+To understand load balancer, we need to understand the types of
+Kubernetes communication:
 
+1. *Container-to-Container Communication*: Kubernetes assigns an IP
+   addres to each pod, therefore containers within a pod are
+   identified with `localhost` and different ports.
 1. *Pod-to-Pod Communication*: Each Pod in a Kubernetes cluster is
-   assigned an IP in a flat shared networking namespace. This allows
-   for a clean network model where Pods, from a networking
-   perspective, can be treated much like virtual machines or physical hosts.
+   assigned an IP in a flat shared networking namespace.  We do not
+   need to explicitly create links between pods and we almost never
+   need to deal with mapping container ports to host ports.  This
+   creates a clean, backwards-compatible model where pods can be
+   treated much like VMs or physical hosts from the perspectives of
+   port allocation, naming, service discovery, load balancing,
+   application configuration, and migration.
 1. *Pod-to-Service Communication*: Services are implemented by
    assigning Virtual IPs which clients can access and are
    transparently proxied to the Pods grouped by that service. Requests
