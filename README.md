@@ -1,4 +1,4 @@
-# A Practical and thus Comprehensive Guide to Concepts in Kubernetes
+# A Practical and Comprehensive Guide to Kubernetes
 
 This trial covers
 [Kubernetes 101](http://kubernetes.io/docs/user-guide/walkthrough/),
