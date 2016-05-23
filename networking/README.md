@@ -55,7 +55,7 @@ l.Addr().String()
 
 大多数虚拟机管理系统提供两种IP地址分配方式：
 
-1. *Bridged*：虚拟机管理系统把IP地址分配的问题移交给host所在网络的IP地址分配机制（通常是host网络的路由器）。这样一来，每一个guest的IP地址和host一样，都是host网络的路由器分配的。启动一台guest，就像在网络里增加了一台机器一样。它的好处是管理很简单，因为host里的进程和guest里的进程都可以互相通信。坏处也很明显，一个物理网段里可以用的IP地址数量是有限的，所以bridged方式下，一个机群里能启动的guest的总数是有限的。
+1. *Bridged*：虚拟机管理系统把IP地址分配的问题移交给host所在网络的IP地址分配机制（通常是host网络的路由器）。这样一来，每一个guest的IP地址和host一样，都是host网络的路由器分配的。启动一台guest，就像在网络里增加了一台机器一样。这样简单明了它的好处是管理很简单，因为host里的进程和guest里的进程都可以互相通信。坏处也很明显，一个物理网段里可以用的IP地址数量是有限的，所以bridged方式下，一个机群里能启动的guest的通常是有限的。这使得如果我们把每个VM当做一个机器来用，而不是只运行一个作业中的一个进程，那么IP地址还是够的。这是很多云服务的使用方式。
 
 1. *NAT（network address translation）*： NAT模式下，每台host上的虚拟机管理系统虚拟一个“路由器”，负责给本host上的各个guest分配IP地址。因为guest IP和host IP不是同一个网段了，所以如果某个host里的进程要访问另一个host里某个guest里的进程的时候，要把目标guest的IP地址“翻译”成目标host的IP地址。这是NAT的名字的来历。知得注意的是：当各个host上都用NAT方式给guest分配IP的时候，在不同host上的多台guest的IP地址可能相同。
 
@@ -71,7 +71,11 @@ l.Addr().String()
 
 ## Docker
 
-Docker的网络通信设计和虚拟机类似。Docker和虚拟机的主要区别在于：Docker不虚拟CPU和硬件，也不需要在虚拟硬件上运行guest OS。说实话，仅仅为了把程序及其依赖打个包方便部署，实在不需要虚拟机。
+Docker的网络通信设计和虚拟机类似。Docker和虚拟机的主要区别在于：Docker不虚拟CPU和硬件，也不需要在虚拟硬件上运行guest OS。说实话，仅仅为了把程序及其依赖打个包方便部署，实在不需要虚拟机。所以相对于虚拟机群，Docker的路子里并没有增加新概念，只是把virtual node改成container了：
+
+1. 节点（node）
+1. 集装箱（container）
+1. 进程（process）
 
 [这篇文档](http://kubernetes.io/docs/admin/networking/#docker-model)描述了Docker的网络模型。下图更直观：
 
@@ -87,16 +91,20 @@ Docker的网络通信设计和虚拟机类似。Docker和虚拟机的主要区�
 
 ## Kubernetes
 
-用虚拟机和Docker来组织分布式计算都有一个共同的麻烦：端口转发。
-
-当开发人员创建虚拟机镜像和Docker image的时候，是可以指定每个进程的局部（虚拟机内和container内）port的 。但是要支持跨host访问，还需要把这些局部端口映射到host端口。而映射到host上哪个端口，依赖当前恰好在host上执行的虚拟机或者container。
+用NAT模式的虚拟机群或者用Docker来组织分布式计算都有一个共同的麻烦：端口转发。当开发人员创建虚拟机镜像和Docker image的时候，是可以指定每个进程的局部（虚拟机内和container内）port的 。但是要支持跨host访问，还需要把这些局部端口映射到host端口。而映射到host上哪个端口，依赖当前恰好在host上执行的虚拟机或者container。
 
 一个简单而且彻底的解决方法是要求机群上执行的所有程序都接受一个命令行参数，比如`--port=`，来指定进程监听的端口号；并且机群管理系统（比如Kubernetes或者Mesos或者YARN）在启动进程的时候，通过`--port`指定给进程一个端口号。但是很多常用程序，比如MySQL和nginx，都并不遵从这样的协议。很多进程会启动多个线程，同时监听多个端口。所以Kubernetes的设计得另寻出路。
 
-虚拟机和Docker的麻烦在于有host IP和局部IP（guest IP和container IP）两层IP地址，所以跨host访问的时候，得用host IP然后端口转发给局部；而不跨host的时候，得用局部IP。所以Kubernetes的思路是，要做到即便是跨host访问，也只需要“局部IP”。换句话说，“局部IP”不能局限在host里，而是要机群里所有host上的所有container共享一个IP地址空间。这其实有点儿像上文中提到的bridged方式，只是把虚拟机换成了container。和bridged方式的另一个不同点是：我们不需要在机群的router管理的物理网段里分配IP，而是在一个虚拟router管理的网段里分配，而这个网段可以很大，从而容纳很多containers。
+Kubernetes的解决思路和Bridged模式的虚拟机群很像——用一个通用的IP地址分配服务，为运行在各个host上的container统一分配IP地址。这样运行在不同host上的containers之间通信，直接使用对方的container IP地址就可以了，而不需要考虑host IP。这实际上把Docker模式中的host IP和container IP这样两层IP地址变成了一层。
 
-要是能这样当然就解决问题了。可惜的是，如上文所说，Docker有自己的networking model，在每台host上有虚拟网桥`docker0`，做不到Kubernetes想要的不同host上的所有container共享一个网络地址空间。为此，Kubernetes只好在host和container之间，引入一层*Pod*，然后利用一个全机群通用的IP地址分配机制，给每个Pod分配IP地址，而Pod里的所有container都用这个Pod的IP地址。
+在Kubernetes的文档里阐述了一个叫*Pod*的概念，并且解释一个Pod里可以运行一个或者多个Docker containers。实际上，一个Pod就是一个Docker container。所谓在Pod里运行的多个containers，实际上是启动的时候加了`--net=container:<pod-container>`参数的containers，它们不会得到自己的IP地址，而是和pod container共享IP地址。这样一来，一个pod里的containers之间通信的时候可以用`localhost`地址，而跨越pod的通信用pod IP。
 
+看上去Kubernetes的做法里相对于Docker的做法，多了一层Pod的概念。但是实际上每个container里约定俗成地只运行一个服务进程，所以还是三层概念：
 
+1. 节点（node）
+1. Pod
+1. container
 
+图示如下
 
+<img src="./kube.png" width=800 />
