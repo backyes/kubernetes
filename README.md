@@ -447,6 +447,7 @@ Kubernetes communication:
    detailed information on the Kubernetes network model and
    motivation.
 
+More about Kubernetes networking is at [here](./networking/README.md).
 
 ## Deployment
 
