@@ -108,3 +108,7 @@ Kubernetes的解决思路和Bridged模式的虚拟机群很像——用一个通
 图示如下
 
 <img src="./kube.png" width=800 />
+
+[这篇文档](http://kubernetes.io/docs/admin/networking/#how-to-achieve-this)列出了在一个机群里为每一个Pod分配一个唯一且可以路由的IP地址的几种方法。我们将着重考虑利用[flannel](https://github.com/coreos/flannel#flannel)的方法。并且在[这里](./flannel.md)介绍。
+
+
