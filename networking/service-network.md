@@ -11,6 +11,7 @@ Pod的IP是由docker0动态分配的，当发生重启，扩容等操作时，IP
 #### 1. ClusterIP
 此模式主要是为了满足Pod访问Service而存在的。下图是一个pod通过service访问另一组pod的场景。
 ![Pod-Service](service-network.png)
+
 为了实现图上的功能主要需要以下几个组件的协同工作
 
 * **apiserver** 用户通过kubectl命令向apiserver发送创建service的命令，apiserver接收到请求以后将数据存储到etcd中。
