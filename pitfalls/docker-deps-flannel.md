@@ -106,3 +106,13 @@ core@localhost ~ $ etcdctl ls /coreos.com
 同时，我们注意到因为flanneld没有启动起来，所以`ifconfig`看不到`flannel0`设备。`flannel0`是flanneld创建的虚拟网桥，详细情况请看[这里](https://github.com/coreos/flannel)。而且因为docker.service依赖flanneld，所以docker.service也没有启动起来，因此`ifconfig`也看不到本应存在的`docker0`虚拟网桥。
 
 在最新的flanneld的配置[文档](https://coreos.com/flannel/docs/latest/flannel-config.html)里，提到flanneld的配置信息要在etcd里配置。照做之后，解决问题。
+
+为了验证 899 和 1010 里，systemd units之间的依赖关系发生了变化，我在一台运行899版本的虚拟机里，用如下命令
+
+```
+systemctl list-dependencies docker
+```
+
+检查了依赖docker.service的其他units：
+
+<img width=600 src=unit-deps-899-vs-1010.png />
