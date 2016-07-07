@@ -1,18 +1,21 @@
 # Flannel Tutorial
 
 ## 简介
-Flannel是一个使用overlay方式的虚拟网络的实现。可以为每个host分配一个网段，容器(Pod)运行时即可自动从这个网段分配IP地址。Flannel是解决Kubernetes网络的一个常用的方式。
+flanneld是一个运行在每个host上的daemon进程。它可以为所在的host维护一个网段，并且为运行在这个host上的Kubernetes pods从这个网段里分配IP地址。多个hosts上的flanneld进程可以利用etcd机群互相协调以确保各自拥有不交叠的网段，这样一个机群上的pods各自拥有互不重复的IP地址。这种构筑在一个网络（hosts网络）之上的另一个网络（flanneld维护的pods网络），被称为 [overlay network](https://en.wikipedia.org/wiki/Overlay_network)。
 
-<img src="./flannel-arch.png" width=800 />
-如上图所示，每台服务器上会启动flanneld的一个守护进程，并为本机分配一个单独的子网(图中的10.1.16.1/24)。flanneld进程启动的时候，
-会从etcd中获取预先配置好的overlay network的网络配置(10.1.0.0/16)，并获取目前已经使用过的子网，然后为本机生成一个专属的子网。
-子网生成完毕之后，生成subnet.env文件，包含对应的子网信息。coreos使用flanneld生成的subnet.env来配置/run/flannel_docker_opts.env
-是docker daemon运行在这个子网，即docker生成的网桥docker0配置在本子网(--bip=10.1.16.1/24)。这样kubernetes 管理Pod的启动就会自动在
+<img src="https://github.com/coreos/flannel/blob/master/packet-01.png" width=800 />
+
+如上图所示，每台服务器上会启动flanneld的一个守护进程，并为本机分配一个单独的子网(图中的10.1.15.1/24)。flanneld进程启动的时候，
+会从etcd中获取预先配置好的overlay network的网络配置(10.1.0.0/16，未在图中显示，但可以从图中flannel0的地址看出掩码16的网络配置)，并获取目前已经使用过的子网，然后为本机生成一个专属的子网。
+子网生成完毕之后，生成/run/flannel/subnet.env文件，包含对应的子网信息。CoreOS的docker.service 使用subnet.env来配置/run/flannel_docker_opts.env。具体过程描述请参见 
+https://coreos.com/flannel/docs/latest/flannel-config.html#under-the-hood 
+
+如果配置docker.service在CoreOS中依赖flanneld.service启动，启动docker.service后docker daemon运行在这个子网，即docker生成的网桥docker0配置在本子网(--bip=10.1.15.1/24)。这样kubernetes 管理Pod的启动就会自动在
 这个网段下分配IP。
 
 ## 在coreos中运行flannel
 
-flanneld 依赖etcd作为配置中心，参考[这篇](https://coreos.com/etcd/docs/latest/clustering.html)文章来先完成etcd集群的部署和搭建。
+不同host上的flanneld进程通过etcd协调各自的网段，参考[这篇](https://coreos.com/etcd/docs/latest/clustering.html)文章来先完成etcd集群的部署和搭建。
 
 完成etcd安装和启动之后，先确保etcd服务可以正确的通过http和etcdctl访问
 
