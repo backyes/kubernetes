@@ -2,26 +2,28 @@
 介绍kubernetes常见的网络模型和配置方法以及不同网络模型的性能评测
 
 ## 环境准备
-* kubernetes master: 在一台虚拟机上部署kubernetes master相关组件。master本身不作为性能测试机，只作为集群的管理和协调者。
-* kubernetes nodes: 在两台物理机上部署kubernetes worker节点的相关组件。
-* 在Master和Node节点上，都安装部署CoreOS操作系统。
+* OS: CoreOS alpha
+* kubernetes master: 在一台虚拟机上部署kubernetes master相关组件。master本身不作为性能测试机，只作为集群的管理和协调者(172.24.3.150)。
+* kubernetes nodes: 在两台物理机上部署kubernetes worker节点的相关组件(两台物理机分别为172.24.2.207, 172.24.2.208)。
 * flannel 版本： 0.5.5
-物理机配置：
+* calico 版本: 1.3.1
+* 物理机配置：
+```
 24 core Intel(R) Xeon(R) CPU E5-2620 v2 @ 2.10GHz
 64G memory
 Intel Corporation I350 Gigabit Network Connection 千兆网卡（4口，评测中只使用第一个网口）
-
-## 搭建kubernetes相关组件，使用flannel的host-gw网络模式
+```
+## 搭建kubernetes相关组件，并配置不通的网络模式
 使用下面这个链接的cloud-config完成master和worker的配置：https://github.com/typhoonzero/kubernetes_binaries/tree/master/cloud-config
 部署方式参考[这个](https://github.com/typhoonzero/kubernetes_binaries/blob/master/README.md)链接
 
-## 性能评测
-评测方法：
+## 性能评测指标：
 
 1. ping延迟: 用ping测试hosts之间和pods之间的延迟
 1. 带宽测试: 用iperf3测试hosts之间和pods之间的带宽
 1. HTTP性能测试: nginx server使用apache benchmark(ab)测试
 
+## 物理机
 物理机之间的ping延迟：
 ```
 ping 172.24.2.208
@@ -79,7 +81,9 @@ Percentage of the requests served within a certain time (ms)
   99%     14
  100%     15 (longest request)
 ```
----
+
+## flannel host-gw模式评测
+
 在pod之间的ping延迟(在和busybox pod不同的host上启动任意一个pod，并获得这个pod的ip，如10.1.33.2)：
 ```
 kubectl exec -it busybox -- ping 10.1.25.2
@@ -150,7 +154,7 @@ Percentage of the requests served within a certain time (ms)
  100%     23 (longest request)
 ```
 
-## 使用flannel vxlan模式的性能：
+## 使用flannel vxlan模式评测：
 **物理机之间的ping延迟，iperf3带宽，nginx性能参考上面数据**
 pod之间的ping延迟：
 ```
