@@ -363,5 +363,13 @@ iptables -t nat -A POSTROUTING ! -d 10.1.0.0/16 -o eth0 -j MASQUERADE
 ```
 1. 此时即可完成对网络的配置，Pod之间、Pod和host之间可以互相访问。
 
+# 结论
+|网络类型|延迟|带宽|nginx(QPS/延迟)|
+| --- | --- | --- | --- |
+|物理|0.116 ms~0.154 ms|942Mb/s|13220.57/3.782|
+|flannel host-gw|0.197 ms~0.386 ms|944Mb/s|10815.20/4.623|
+|flannel vxlan|0.240 ms~0.838 ms|912Mb/s|10061.15/4.970|
+|Calico|0.188 ms~0.358 ms|945Mb/s|10398.93/4.808|
+
 # TODO
 * L2模式的部署方案
