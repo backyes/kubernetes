@@ -17,16 +17,24 @@ Intel Corporation I350 Gigabit Network Connection 千兆网卡（4口，评测�
 使用下面这个链接的cloud-config完成master和worker的配置：https://github.com/typhoonzero/kubernetes_binaries/tree/master/cloud-config
 部署方式参考[这个](https://github.com/typhoonzero/kubernetes_binaries/blob/master/README.md)链接
 
+## 为这两个物理节点增加label:
+```
+kubectl label no 172.24.2.207 workern=1
+kubectl label no 172.24.2.208 workern=2
+```
+
 ## 性能评测指标：
 
 1. ping延迟: 用ping测试hosts之间和pods之间的延迟
 1. 带宽测试: 用iperf3测试hosts之间和pods之间的带宽
-1. HTTP性能测试: nginx server使用apache benchmark(ab)测试
+1. HTTP性能测试: 部署单进程nginx server并使用apache benchmark(ab)测试
 
-## 物理机
-物理机之间的ping延迟：
+## 物理机，交换机连接
+
+### ping延迟
+物理机之间的ping延迟，登录到172.24.2.207，运行```ping 172.24.2.208```测试延迟：
 ```
-ping 172.24.2.208
+# ping 172.24.2.208
 PING 172.24.2.208 (172.24.2.208) 56(84) bytes of data.
 64 bytes from 172.24.2.208: icmp_seq=1 ttl=64 time=0.151 ms
 64 bytes from 172.24.2.208: icmp_seq=2 ttl=64 time=0.121 ms
@@ -36,16 +44,25 @@ PING 172.24.2.208 (172.24.2.208) 56(84) bytes of data.
 64 bytes from 172.24.2.208: icmp_seq=6 ttl=64 time=0.116 ms
 64 bytes from 172.24.2.208: icmp_seq=7 ttl=64 time=0.154 ms
 ```
+平均值为： 0.1389 ms
 
-物理机之间的iperf3带宽：（在CoreOS使用toolbox命令后，输入```yum install -y iperf3```安装）。事先在172.24.2.207上启动iperf3 server: ```iperf3 -s```，然后在172.24.2.208执行下面命令:
+可以通过下面的脚本计算ping延迟的平均值：
 ```
-iperf3 -c 172.24.2.207
+core@core-03 ~ $ ping localhost | head -n 20 | gawk '/time/ {split($8, ss, "="); sum+=ss[2]; count+=1;} END{print sum/count "ms";}'
+0.0275556ms
+```
+
+### iperf3带宽
+物理机之间的iperf3带宽：（在CoreOS使用[toolbox](https://coreos.com/os/docs/latest/install-debugging-tools.html)命令后，输入```yum install -y iperf3```安装）。事先在172.24.2.207上启动iperf3 server: ```iperf3 -s```，然后在172.24.2.208执行下面命令:
+```
+# iperf3 -c 172.24.2.207
 [ ID] Interval           Transfer     Bandwidth       Retr
 [  4]   0.00-10.00  sec  1.10 GBytes   942 Mbits/sec    0             sender
 [  4]   0.00-10.00  sec  1.10 GBytes   941 Mbits/sec                  receiver
 ```
 
-物理机之间的nginx ab结果：(使用docker --net=host启动nginx server， 在toolbox中使用ab)
+### nginx benchmark
+先在172.24.2.207上，执行```docker run --net=host nginx```启动一个单进程的nginx服务，然后在172.24.2.208上执行```toolbox```进入CoreOS工具箱。使用下面命令预先安装apache benchmark(ab命令)```yum install -y httpd-tools```，然后使用```ab -n 90000 -c 50 http://172.24.2.207/```开始压测，结果如下：
 ```
 Document Path:          /
 Document Length:        612 bytes
@@ -84,7 +101,8 @@ Percentage of the requests served within a certain time (ms)
 
 ## flannel host-gw模式评测
 
-在pod之间的ping延迟(在和busybox pod不同的host上启动任意一个pod，并获得这个pod的ip，如10.1.33.2)：
+### ping延迟
+在pod之间的ping延迟，通过```kubectl create -f curl_pod.yaml```启动一个busybox的pod，然后查看这个pod所在的host的地址：```kubectl describe po busybox```，在和busybox pod不同的host上启动一个pod，比如：```kubectl create -f ./perf_pod_2.yaml```，并获得这个pod的ip，如10.1.33.2)，然后执行下面的命令获得ping延迟:
 ```
 kubectl exec -it busybox -- ping 10.1.25.2
 PING 10.1.25.2 (10.1.25.2): 56 data bytes
@@ -98,12 +116,17 @@ PING 10.1.25.2 (10.1.25.2): 56 data bytes
 64 bytes from 10.1.25.2: seq=7 ttl=62 time=0.368 ms
 64 bytes from 10.1.25.2: seq=8 ttl=62 time=0.267 ms
 ```
+平均延迟： 0.297111ms
 
+### iperf3带宽
 pod之间的iperf3带宽:
 
-启动两个pod，iperfbox1, iperfbox2，使用nodeSelector启动不同的host上，iperfbox1作为server，执行```kubectl exec -it iperfbox1 -- iperf3 -s```。然后从iperfbox2访问iperfbox1的IP来测试带宽，iperfbox1的IP如10.1.66.5：
-
-可以在本目录下找到iperfbox的yaml文件(./perf_pod_1.yaml)和(./perf_pod_2.yaml)
+使用下面命令启动两个pod，iperfbox1, iperfbox2，使用nodeSelector启动不同的host上。可以在本目录下找到iperfbox的yaml文件(./perf_pod_1.yaml)和(./perf_pod_2.yaml)
+```
+kubectl create -f ./perf_pod_1.yaml
+kubectl create -f ./perf_pod_2.yaml
+```
+然后iperfbox1作为server，执行```kubectl exec -it iperfbox1 -- iperf3 -s```。然后从iperfbox2访问iperfbox1的IP来测试带宽，使用```kubectl describe po iperfbox1```iperfbox1的IP如10.1.66.5：
 
 ```
 kubectl exec -it iperfbox2 -- iperf3 -c 10.1.66.5
@@ -113,9 +136,15 @@ kubectl exec -it iperfbox2 -- iperf3 -c 10.1.66.5
 [  4]   0.00-10.00  sec  1.10 GBytes   941 Mbits/sec                  receiver
 ```
 
+### nginx benchmark
 pod内的nginx性能：
-(用RC创建Nginx pod，并且封装成一个NodePort类型的service)
-使用nodeport访问和clusterIP访问，性能相近：
+
+用RC创建Nginx pod，并且封装成一个NodePort类型的service:
+```
+kubectl create -f nginx-replication-controller.yaml
+kubectl create -f nginx-service-nodeport.yaml
+```
+使用nodeport访问和clusterIP访问```ab -n 90000 -c 50 http://172.24.2.207:30001/```，性能相近。：
 ```
 Server Software:        nginx/1.11.1
 Server Hostname:        172.24.2.207
@@ -156,7 +185,8 @@ Percentage of the requests served within a certain time (ms)
 
 ## 使用flannel vxlan模式评测：
 **物理机之间的ping延迟，iperf3带宽，nginx性能参考上面数据**
-pod之间的ping延迟：
+### pod之间的ping延迟：
+操作步骤同上
 ```
 kubectl exec -it busybox -- ping 10.1.87.2
 PING 10.1.87.2 (10.1.87.2): 56 data bytes
@@ -178,14 +208,18 @@ PING 10.1.87.2 (10.1.87.2): 56 data bytes
 64 bytes from 10.1.87.2: seq=15 ttl=62 time=0.345 ms
 64 bytes from 10.1.87.2: seq=16 ttl=62 time=0.330 ms
 ```
-pod之间的带宽
+平均延迟：0.338176ms
+
+### pod之间的带宽
+操作步骤同上
 ```
 kubectl exec -it iperfbox1 -- iperf3 -c 10.1.87.2
 [ ID] Interval           Transfer     Bandwidth       Retr
 [  4]   0.00-10.00  sec  1.06 GBytes   912 Mbits/sec  192             sender
 [  4]   0.00-10.00  sec  1.06 GBytes   909 Mbits/sec                  receiver
 ```
-nginx 性能， 通过NodePort方式，访问Pod所在host的ip```ab -n 90000 -c 50 http://172.24.2.207:30001/```，通过clusterIP访问，性能相近
+### nginx性能
+操作步骤同上
 ```
 Server Software:        nginx/1.11.1
 Server Hostname:        172.24.2.207
@@ -225,8 +259,9 @@ Percentage of the requests served within a certain time (ms)
 ```
 
 ## 使用kubernetes + Calico测试网络性能
-1. 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/完成1个master，2个host的
-1. pod之间的ping延迟(192.168.0.64为在不同host启动的pod的IP地址)
+* 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/完成1个master，2个host的
+### ping延迟
+(192.168.0.64为在不同host启动的pod的IP地址)
 ```
 kubectl exec -it busybox -- ping 192.168.0.64
 PING 192.168.0.64 (192.168.0.64): 56 data bytes
@@ -255,14 +290,16 @@ PING 192.168.0.64 (192.168.0.64): 56 data bytes
 64 bytes from 192.168.0.64: seq=22 ttl=62 time=0.251 ms
 64 bytes from 192.168.0.64: seq=23 ttl=62 time=0.200 ms
 ```
-1. iperf3延迟评测，评测方法同上
+### iperf3带宽
+评测方法同上
 ```
 kubectl exec -it iperfbox1 -- iperf3 -c 192.168.0.64
 [ ID] Interval           Transfer     Bandwidth       Retr
 [  4]   0.00-10.00  sec  1.10 GBytes   945 Mbits/sec  137             sender
 [  4]   0.00-10.00  sec  1.10 GBytes   941 Mbits/sec                  receiver
 ```
-1. nginx性能评测，评测方法同上
+### nginx benchmark
+评测方法同上
 ```
 Server Software:        nginx/1.11.1
 Server Hostname:        172.24.2.207
@@ -308,68 +345,69 @@ Percentage of the requests served within a certain time (ms)
 以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。
 1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点。
 1. 使用下面的方法配置/etc/systemd/system/kubelet.service如下，注意增加--configure-cbr0=true参数(此参数在后续版本中会被network-plugin功能替换)：
-```
-[Service]
-ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
+  ```
+  [Service]
+  ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
 
-Environment=KUBELET_VERSION=v1.2.4_coreos.1
+  Environment=KUBELET_VERSION=v1.2.4_coreos.1
 
-ExecStart=/usr/lib/coreos/kubelet-wrapper \
-  --pod_infra_container_image=typhoon1986/pause:2.0 \
-  --api-servers=http://172.24.3.150:8080 \
-  --network-plugin-dir=/etc/kubernetes/cni/net.d \
-  --network-plugin=${NETWORK_PLUGIN} \
-  --register-schedulable=false \
-  --allow-privileged=true \
-  --config=/etc/kubernetes/manifests \
-  --hostname-override=<YOUR_IP> \
-  --cluster-dns=10.0.0.10 \
-  --cluster-domain=cluster.local \
-  --configure-cbr0=true
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-```
+  ExecStart=/usr/lib/coreos/kubelet-wrapper \
+    --pod_infra_container_image=typhoon1986/pause:2.0 \
+    --api-servers=http://172.24.3.150:8080 \
+    --network-plugin-dir=/etc/kubernetes/cni/net.d \
+    --network-plugin=${NETWORK_PLUGIN} \
+    --register-schedulable=false \
+    --allow-privileged=true \
+    --config=/etc/kubernetes/manifests \
+    --hostname-override=<YOUR_IP> \
+    --cluster-dns=10.0.0.10 \
+    --cluster-domain=cluster.local \
+    --configure-cbr0=true
+  Restart=always
+  RestartSec=10
+  [Install]
+  WantedBy=multi-user.target
+  ```
 1. 重启docker daemon，增加以下参数```DOCKER_OPTS="--bridge=cbr0 --iptables=false --ip-masq=false"```，可以使用systemd drop-in文件，配置：
-```
-[Service]
-Environment=DOCKER_OPTS="--bridge=cbr0 --iptables=false --ip-masq=false"
-```
+  ```
+  [Service]
+  Environment=DOCKER_OPTS="--bridge=cbr0 --iptables=false --ip-masq=false"
+  ```
 1. 使用下面的配置文件(node_1.yaml)给当前的节点配置对应的CIDR(比如：10.1.40.0/24)，执行```kubectl create -f node_1.yaml```:
-```
-{
-  "kind": "Node",
-  "apiVersion": "v1",
-  "metadata": {
-    "name": "<YOUR_IP>",
-    "labels": {
-      "name": "my-first-k8s-node-1"
+  ```
+  {
+    "kind": "Node",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "<YOUR_IP>",
+      "labels": {
+        "name": "my-first-k8s-node-1"
+      }
+    },
+    "spec": {
+      "podCIDR": "10.1.40.0/24"
     }
-  },
-  "spec": {
-    "podCIDR": "10.1.40.0/24"
   }
-}
-```
+  ```
 1. 此时worker节点的kubelet进程会根据设置的CIDR创建cbr0的网桥，如果没有创建成功可以尝试重启kubelet服务。
 1. 因为这个时候host和cbr0之间是相互无法感知的，需要增加一条NAT配置，将Pod CIDR的网络可以转发到实际的物理网络(假设设置的Pod的子网都在10.1.0.0/16这个子网下)。如下：
-```
-iptables -t nat -A POSTROUTING ! -d 10.1.0.0/16 -o eth0 -j MASQUERADE
-```
+  ```
+  iptables -t nat -A POSTROUTING ! -d 10.1.0.0/16 -o eth0 -j MASQUERADE
+  ```
 1. 启动多个worker，并在每个worker上增加路由表，使发向这个host上的Pod CIDR的包都路由到对应host的物理机的IP地址，比如：
-```
-10.1.40.0/24 via 172.24.2.207 dev eno1
-```
+  ```
+  10.1.40.0/24 via 172.24.2.207 dev eno1
+  ```
 1. 此时即可完成对网络的配置，Pod之间、Pod和host之间可以互相访问。
 
 # 结论
 |网络类型|延迟|带宽|nginx(QPS/延迟)|
 | --- | --- | --- | --- |
-|物理|0.116 ms~0.154 ms|942Mb/s|13220.57/3.782|
-|flannel host-gw|0.197 ms~0.386 ms|944Mb/s|10815.20/4.623|
-|flannel vxlan|0.240 ms~0.838 ms|912Mb/s|10061.15/4.970|
-|Calico|0.188 ms~0.358 ms|945Mb/s|10398.93/4.808|
+|物理|0.1389 ms|942Mb/s|13220.57/3.782|
+|flannel host-gw|0.297111ms|944Mb/s|10815.20/4.623|
+|flannel vxlan|0.338176ms|912Mb/s|10061.15/4.970|
+|Calico|0.251583ms|945Mb/s|10398.93/4.808|
 
 # TODO
+* Calico网络模式的介绍
 * L2模式的部署方案
