@@ -13,7 +13,7 @@
 64G memory
 Intel Corporation I350 Gigabit Network Connection 千兆网卡（4口，评测中只使用第一个网口）
 ```
-## 搭建kubernetes相关组件，并配置不通的网络模式
+## 搭建kubernetes相关组件，并配置不同的网络模式
 使用下面这个链接的cloud-config完成master和worker的配置：https://github.com/typhoonzero/kubernetes_binaries/tree/master/cloud-config
 部署方式参考[这个](https://github.com/typhoonzero/kubernetes_binaries/blob/master/README.md)链接
 
@@ -29,10 +29,10 @@ kubectl label no 172.24.2.208 workern=2
 1. 带宽测试: 用iperf3测试hosts之间和pods之间的带宽
 1. HTTP性能测试: 部署单进程nginx server并使用apache benchmark(ab)测试
 
-## 物理机，交换机连接
+## 物理机性能评测
 
 ### ping延迟
-物理机之间的ping延迟，登录到172.24.2.207，运行```ping 172.24.2.208```测试延迟：
+登录到172.24.2.207，运行```ping 172.24.2.208```测试延迟：
 ```
 # ping 172.24.2.208
 PING 172.24.2.208 (172.24.2.208) 56(84) bytes of data.
@@ -46,14 +46,14 @@ PING 172.24.2.208 (172.24.2.208) 56(84) bytes of data.
 ```
 平均值为： 0.1389 ms
 
-可以通过下面的脚本计算ping延迟的平均值：
+*注：可以通过下面的脚本例子计算ping延迟的平均值，注意split的列可能根据ping的输出不同而不同，对于上面的例子split列应该是7*
 ```
 core@core-03 ~ $ ping localhost | head -n 20 | gawk '/time/ {split($8, ss, "="); sum+=ss[2]; count+=1;} END{print sum/count "ms";}'
 0.0275556ms
 ```
 
 ### iperf3带宽
-物理机之间的iperf3带宽：（在CoreOS使用[toolbox](https://coreos.com/os/docs/latest/install-debugging-tools.html)命令后，输入```yum install -y iperf3```安装）。事先在172.24.2.207上启动iperf3 server: ```iperf3 -s```，然后在172.24.2.208执行下面命令:
+在172.24.2.207和172.24.2.208的CoreOS使用[toolbox](https://coreos.com/os/docs/latest/install-debugging-tools.html)命令后，输入```yum install -y iperf3```安装iperf3。然后在172.24.2.207上启动iperf3 server: ```iperf3 -s```，在172.24.2.208启动客户端，执行下面命令:
 ```
 # iperf3 -c 172.24.2.207
 [ ID] Interval           Transfer     Bandwidth       Retr
@@ -290,6 +290,7 @@ PING 192.168.0.64 (192.168.0.64): 56 data bytes
 64 bytes from 192.168.0.64: seq=22 ttl=62 time=0.251 ms
 64 bytes from 192.168.0.64: seq=23 ttl=62 time=0.200 ms
 ```
+平均延迟：0.251583ms
 ### iperf3带宽
 评测方法同上
 ```
@@ -343,6 +344,7 @@ Percentage of the requests served within a certain time (ms)
 # 其他网络方式的尝试
 ## 使用类似GCE方式手动配置kubernetes网络
 以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。
+
 1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点。
 1. 使用下面的方法配置/etc/systemd/system/kubelet.service如下，注意增加--configure-cbr0=true参数(此参数在后续版本中会被network-plugin功能替换)：
   ```
