@@ -102,7 +102,7 @@ Percentage of the requests served within a certain time (ms)
 ## flannel host-gw模式评测
 
 ### ping延迟
-在pod之间的ping延迟，通过```kubectl create -f curl_pod.yaml```启动一个busybox的pod，然后查看这个pod所在的host的地址：```kubectl describe po busybox```，在和busybox pod不同的host上启动一个pod，比如：```kubectl create -f ./perf_pod_2.yaml```，并获得这个pod的ip，如10.1.33.2)，然后执行下面的命令获得ping延迟:
+在pod之间的ping延迟，通过```kubectl create -f curl_pod.yaml```启动一个busybox的pod，然后查看这个pod所在的host的地址：```kubectl describe po busybox```，在和busybox pod不同的host上启动一个pod，比如：```kubectl create -f ./perf_pod_2.yaml```，并获得这个pod的ip，如10.1.25.2)，然后执行下面的命令获得ping延迟:
 ```
 kubectl exec -it busybox -- ping 10.1.25.2
 PING 10.1.25.2 (10.1.25.2): 56 data bytes
@@ -259,7 +259,8 @@ Percentage of the requests served within a certain time (ms)
 ```
 
 ## 使用kubernetes + Calico测试网络性能
-* 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/完成1个master，2个host的
+* 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/ 完成1个master，2个host的集群部署
+
 ### ping延迟
 (192.168.0.64为在不同host启动的pod的IP地址)
 ```
