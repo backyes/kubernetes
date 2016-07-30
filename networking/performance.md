@@ -344,7 +344,7 @@ Percentage of the requests served within a certain time (ms)
 
 # 其他网络方式的尝试
 ## 使用类似GCE方式手动配置kubernetes网络
-以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。
+以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。参考链接：http://kubernetes.io/docs/admin/networking/#google-compute-engine-gce
 
 1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点(无flannel, calico policy等)。
 1. 使用下面的方法配置/etc/systemd/system/kubelet.service如下，注意增加--configure-cbr0=true参数(此参数在后续版本中会被network-plugin功能替换)：
