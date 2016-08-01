@@ -102,7 +102,7 @@ Percentage of the requests served within a certain time (ms)
 ## flannel host-gw模式评测
 
 ### ping延迟
-在pod之间的ping延迟，通过```kubectl create -f curl_pod.yaml```启动一个busybox的pod，然后查看这个pod所在的host的地址：```kubectl describe po busybox```，在和busybox pod不同的host上启动一个pod，比如：```kubectl create -f ./perf_pod_2.yaml```，并获得这个pod的ip，如10.1.33.2)，然后执行下面的命令获得ping延迟:
+在pod之间的ping延迟，通过```kubectl create -f curl_pod.yaml```启动一个busybox的pod，然后查看这个pod所在的host的地址：```kubectl describe po busybox```，在和busybox pod不同的host上启动一个pod，比如：```kubectl create -f ./perf_pod_2.yaml```，并获得这个pod的ip，如10.1.25.2)，然后执行下面的命令获得ping延迟:
 ```
 kubectl exec -it busybox -- ping 10.1.25.2
 PING 10.1.25.2 (10.1.25.2): 56 data bytes
@@ -259,7 +259,8 @@ Percentage of the requests served within a certain time (ms)
 ```
 
 ## 使用kubernetes + Calico测试网络性能
-* 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/完成1个master，2个host的
+* 根据http://kubernetes.io/docs/getting-started-guides/coreos/bare_metal_calico/ 完成1个master，2个host的集群部署
+
 ### ping延迟
 (192.168.0.64为在不同host启动的pod的IP地址)
 ```
@@ -343,9 +344,9 @@ Percentage of the requests served within a certain time (ms)
 
 # 其他网络方式的尝试
 ## 使用类似GCE方式手动配置kubernetes网络
-以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。
+以下部分为手动配置kubernetes网络，形成类似GCE方式的网络，可以获得较高的性能。但由于目前只能实现手动配置，在实际生产环境使用有待进一步研究。参考链接：http://kubernetes.io/docs/admin/networking/#google-compute-engine-gce
 
-1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点。
+1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点(无flannel, calico policy等)。
 1. 使用下面的方法配置/etc/systemd/system/kubelet.service如下，注意增加--configure-cbr0=true参数(此参数在后续版本中会被network-plugin功能替换)：
   ```
   [Service]
@@ -402,6 +403,126 @@ Percentage of the requests served within a certain time (ms)
   ```
 1. 此时即可完成对网络的配置，Pod之间、Pod和host之间可以互相访问。
 
+## 二层网络方式组建kubernetes集群
+1. 根据https://coreos.com/kubernetes/docs/latest/getting-started.html 这个教程启动一个kubernetes master节点(无flannel, calico policy等)，master节点不需要配置L2网络相关功能，master组件均已```docker run --net=host ...```方式启动，worker和client可以直接连接
+1. 在交换机预先为每个worker配置好需要使用的网段，这里分配的是172.24.102.0/24和172.24.103.0/24，使得在这个网段下分配的IP地址可以直接被交换机转发，在我的测试环境下，转发的网关为：172.24.1.12
+1. 将每个worker的默认网卡设备的默认IP地址改成上面分配好的网段的第一个ip：172.24.102.1，172.24.103.1，并修改默认路由也使用这个IP
+1. 根据[这里](http://blog.oddbit.com/2014/08/11/four-ways-to-connect-a-docker/)Linux Bridge部分提到的方法，在每个worker上配置一个br-eno1的网桥，并将机器的默认IP绑定到这个网桥上
+1. 配置docker 的drop-in文件，使docker在启动时使用这个网桥和对应的子网:
+  ```
+  [Service]
+  Environment="DOCKER_OPTS=--bridge=br-eno1 --iptables=false --ip-masq=false --fixed-cidr=172.24.103.0/24 --default-gateway=172.24.1.12"
+  ```
+  然后重启docker服务:
+  ```
+  systemctl daemon-reload
+  systemctl restart docker
+  ```
+1. 根据[这里](https://github.com/k8sp/kubernetes-examples/tree/master/install/cloud-config)的方法启动kubernetes worker节点：```systemctl start kubelet```
+1. 此时启动的pod将会分配在配置好的L2网络下的IP地址并被自动路由，但由于之前docker daemon的启动默认会开启iptables并创建一些规则，iptables和conntrack相关的内核模块会自动被加载，在iptables存在很简单的规则时，也会导致nginx的性能降低约10%，尝试使用下面的方法卸载worker节点的iptables和conntrack内核模块：
+  先创建一个脚本：
+  ```
+  #!/bin/bash
+
+  #/sbin/modprobe --version 2>&1 | grep -q module-init-tools \
+  #    && NEW_MODUTILS=1 \
+  #    || NEW_MODUTILS=0
+
+  NEW_MODUTILS=1
+  IPTABLES=iptables
+  IPV＝ip
+  PROC_IPTABLES_NAMES=/proc/net/${IPV}_tables_names
+  NF_TABLES=$(cat "$PROC_IPTABLES_NAMES" 2>/dev/null)
+
+  echo $PROC_IPTABLES_NAMES
+  echo $NF_TABLES
+
+  rmmod_r() {
+      # Unload module with all referring modules.
+      # At first all referring modules will be unloaded, then the module itself.
+      local mod=$1
+      local ret=0
+      local ref=
+
+      # Get referring modules.
+      # New modutils have another output format.
+      [ $NEW_MODUTILS = 1 ] \
+          && ref=$(lsmod | awk "/^${mod}/ { print \$4; }" | tr ',' ' ') \
+          || ref=$(lsmod | grep ^${mod} | cut -d "[" -s -f 2 | cut -d "]" -s -f 1)
+
+      # recursive call for all referring modules
+      for i in $ref; do
+          rmmod_r $i
+          let ret+=$?;
+      done
+
+      # Unload module.
+      # The extra test is for 2.6: The module might have autocleaned,
+      # after all referring modules are unloaded.
+      if grep -q "^${mod}" /proc/modules ; then
+          modprobe -r $mod > /dev/null 2>&1
+          res=$?
+          [ $res -eq 0 ] || echo -n " $mod"
+          let ret+=$res;
+      fi
+
+      return $ret
+  }
+
+  flush_n_delete() {
+      # Flush firewall rules and delete chains.
+      [ ! -e "$PROC_IPTABLES_NAMES" ] && return 0
+
+      # Check if firewall is configured (has tables)
+      [ -z "$NF_TABLES" ] && return 1
+
+      echo -n $"${IPTABLES}: Flushing firewall rules: "
+      ret=0
+      # For all tables
+      for i in $NF_TABLES; do
+          # Flush firewall rules.
+      $IPTABLES -t $i -F;
+      let ret+=$?;
+
+          # Delete firewall chains.
+      $IPTABLES -t $i -X;
+      let ret+=$?;
+
+      # Set counter to zero.
+      $IPTABLES -t $i -Z;
+      let ret+=$?;
+      done
+
+      #[ $ret -eq 0 ] && success || failure
+      echo
+      return $ret
+  }
+
+  flush_n_delete
+
+  rmmod_r iptable_nat
+  rmmod_r nf_nat_ipv4
+  rmmod_r iptable_filter
+  rmmod_r ip_tables
+  rmmod_r x_tables
+  rmmod_r nf_nat
+  rmmod_r nf_conntrack
+  ```
+  递归卸载iptables相关模块，然后增加一个docker的drop-in文件在启动docker之后卸载模块：
+  ```
+  # vim /etc/systemd/system/docker.service.d/modprobe.conf
+  [Service]
+  ExecStartPost=-/bin/systemctl restart iptables
+  ExecStartPost=-/sbin/modprobe -r nf_nat_ipv4 nf_nat nf_conntrack_ipv4 nf_conntrack
+  ```
+  重启docker服务
+  ```
+  # systemctl daemon-reload
+  # systemctl restart docker
+  # lsmod | grep conntrack
+  ```
+1. 此方式仍然会导致其他问题，参考：https://github.com/k8sp/issues/issues/27，但可以达到100%的物理机性能。
+
 # 结论
 |网络类型|延迟|带宽|nginx(QPS/延迟)|
 | --- | --- | --- | --- |
@@ -409,7 +530,7 @@ Percentage of the requests served within a certain time (ms)
 |flannel host-gw|0.297111ms|944Mb/s|10815.20/4.623|
 |flannel vxlan|0.338176ms|912Mb/s|10061.15/4.970|
 |Calico|0.251583ms|945Mb/s|10398.93/4.808|
+|L2模式|0.15 ms|942Mb/s|14864.62/3.364|
 
 # TODO
 * Calico网络模式的介绍
-* L2模式的部署方案
